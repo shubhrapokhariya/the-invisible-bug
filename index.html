@@ -1,0 +1,1040 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>The Invisible Bug — A Next.js Detective Game</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        background: #0a0f1a;
+        min-height: 100vh;
+        overflow-x: hidden;
+      }
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(5px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      @keyframes shake {
+        0%,
+        100% {
+          transform: translateX(0);
+        }
+        15% {
+          transform: translateX(-7px);
+        }
+        30% {
+          transform: translateX(7px);
+        }
+        45% {
+          transform: translateX(-5px);
+        }
+        60% {
+          transform: translateX(5px);
+        }
+        75% {
+          transform: translateX(-3px);
+        }
+        90% {
+          transform: translateX(3px);
+        }
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.35;
+        }
+      }
+      @keyframes sunrise {
+        from {
+          opacity: 0;
+          transform: translateY(12px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      @keyframes toastIn {
+        from {
+          opacity: 0;
+          transform: translateX(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(0);
+        }
+      }
+      @keyframes toastOut {
+        from {
+          opacity: 1;
+        }
+        to {
+          opacity: 0;
+        }
+      }
+      ::-webkit-scrollbar {
+        width: 3px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #060d1a;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #1e3a5f;
+      }
+      @media (max-width: 600px) {
+        .game-sidebar {
+          display: none !important;
+        }
+        .game-sidebar-mobile {
+          display: flex !important;
+        }
+        .code-panel-header span:last-child {
+          display: none !important;
+        }
+        .game-hint {
+          font-size: 10px !important;
+        }
+        .level-badge {
+          display: none !important;
+        }
+      }
+      .shake {
+        animation: shake 0.55s ease;
+      }
+      .fadein {
+        animation: fadeIn 0.5s ease;
+      }
+      .sunrisein {
+        animation: sunrise 0.7s ease;
+      }
+      @media (max-width: 640px) {
+        body {
+          font-size: 12px;
+        }
+        #root {
+          max-width: 100vw;
+          overflow-x: hidden;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="shake-wrapper"
+      style="
+        font-family: &quot;Courier New&quot;, monospace;
+        max-width: 960px;
+        margin: 0 auto;
+        min-width: 0;
+        overflow-x: hidden;
+      "
+    >
+      <div id="root"></div>
+    </div>
+    <div
+      id="toast"
+      style="
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 999;
+        display: none;
+        padding: 10px 16px;
+        border: 1px solid #ff6b35;
+        background: #1a0d00;
+        color: #ff9500;
+        font-size: 11px;
+        font-family: &quot;Courier New&quot;, monospace;
+        letter-spacing: 0.1em;
+        max-width: 260px;
+        animation: toastIn 0.2s ease;
+      "
+    ></div>
+
+    <script>
+      const LEVELS = [
+        {
+          id: 1,
+          title: "The Tag Mismatch",
+          difficulty: "TUTORIAL",
+          bugDescription:
+            "A cache tag mismatch between the data function and the mutation. Two different strings. Zero errors. Products never refresh after creation.",
+          files: {
+            "lib/data.ts":
+              "async function getProducts() {\n  'use cache'\n  cacheTag('product-list')  // ← line 3\n  return db.query(\n    'SELECT * FROM products'\n  )\n}",
+            "actions/products.ts":
+              "export async function createProduct(\n  data: ProductData\n) {\n  await db.insert(data)\n  revalidateTag('products')  // ← line 5\n  redirect('/products')\n}",
+            "tsconfig.json":
+              '{\n  "compilerOptions": {\n    "target": "es2017",\n    "strict": false,\n    "moduleResolution": "bundler"\n  }\n}',
+          },
+          ciLog: [
+            "▶ next build",
+            "✓ Compiled successfully",
+            "✓ Linting passed",
+            "✓ Type checking passed",
+            "✓ 24/24 pages generated",
+            "● Build complete — 2.4s",
+          ],
+          metrics: {
+            "Cache Hit Rate": "94%",
+            "Build Status": "PASSING",
+            "TS Errors": "0",
+            "Lint Warnings": "0",
+            "Last Deploy": "2 min ago",
+          },
+          hint: "Compare the tag strings in cacheTag() and revalidateTag() across both files.",
+          bugFile: "actions/products.ts",
+          bugLine: 5,
+          bugExplanation:
+            "cacheTag('product-list') in data.ts but revalidateTag('products') in actions/products.ts. Different strings. The cache never invalidates. TypeScript can't catch this — both are valid strings. Fix: a centralized tags constant file that everyone imports from.",
+          turingQuote:
+            "Turing broke Enigma by finding the one pattern others treated as noise. You just did the same.",
+          collapse: [
+            "[ERROR] Cache not invalidating after mutations",
+            "[WARN]  Users reporting stale product data",
+            "[ERROR] /api/products returning 6-hour-old cache",
+            "[SLACK] #on-call: 'why are new products not showing?'",
+            "[SLACK] #on-call: 'this has been broken for 3 days'",
+            "[ERROR] 847 users affected",
+            "[PAGE]  3:14 AM — On-call engineer paged",
+            "[SLACK] #incidents: 'P1 — cache invalidation failure'",
+          ],
+        },
+
+        {
+          id: 2,
+          title: "The Silent Argument",
+          difficulty: "INTERMEDIATE",
+          bugDescription:
+            "revalidateTag called with a single argument. Compiles clean in non-strict mode. Falls back to legacy behavior silently. Users see stale data after every mutation.",
+          files: {
+            "actions/cart.ts":
+              "'use server'\nimport { revalidateTag } from 'next/cache'\n\nexport async function updateCartItem(\n  id: string,\n  qty: number\n) {\n  await db.update({ id, qty })\n  revalidateTag('cart')  // ← line 9\n}",
+            "lib/cart.ts":
+              "export async function getCartItems(\n  userId: string\n) {\n  'use cache'\n  cacheTag('cart')\n  cacheLife('seconds')\n  return db.query(\n    'SELECT * FROM cart WHERE user_id = $1',\n    [userId]\n  )\n}",
+            "tsconfig.json":
+              '{\n  "compilerOptions": {\n    "target": "es2017",\n    "strict": false,\n    "moduleResolution": "bundler"\n  }\n}',
+          },
+          ciLog: [
+            "▶ next build",
+            "✓ Compiled successfully",
+            "✓ No TypeScript errors",
+            "✓ ESLint passed",
+            "✓ 31/31 pages generated",
+            "● Build complete — 3.1s",
+          ],
+          metrics: {
+            "Cache Hit Rate": "91%",
+            "Build Status": "PASSING",
+            "TS Errors": "0",
+            "Deploy Time": "3.1s",
+            "Last Deploy": "8 min ago",
+          },
+          hint: "In Next.js 16, revalidateTag() requires a second argument. Check the API and tsconfig.",
+          bugFile: "actions/cart.ts",
+          bugLine: 9,
+          bugExplanation:
+            "Next.js 16 deprecated single-argument revalidateTag(). It now requires a second argument, such as a cacheLife profile like 'max' for SWR behavior, or updateTag() in Server Actions for read-your-writes semantics. With strict: false, there's no TypeScript error. It compiles, deploys, and silently falls back to legacy cache behavior.",
+          turingQuote:
+            "Turing's machines found meaning in what looked like static. The signal was there. The decoder was missing.",
+          collapse: [
+            "[ERROR] Cart not updating after item changes",
+            "[WARN]  revalidateTag falling back to legacy behavior",
+            "[ERROR] SWR cache not refreshing — stale cart data",
+            "[SLACK] #on-call: 'customers seeing wrong cart totals'",
+            "[SLACK] #on-call: 'checkout broken for some users'",
+            "[ERROR] Revenue impact: ~$4,200/hr",
+            "[PAGE]  2:47 AM — On-call engineer paged",
+            "[SLACK] #incidents: 'P1 — cart cache regression'",
+          ],
+        },
+
+        {
+          id: 3,
+          title: "The Vanishing Middleware",
+          difficulty: "HARD",
+          bugDescription:
+            "Auth redirects stopped working after the Next.js 16 upgrade. The file exists. The code is valid. TypeScript is happy. The middleware simply isn't running.",
+          files: {
+            "middleware.ts":
+              "import { NextResponse } from 'next/server'\nimport type { NextRequest } from 'next/server'\n\nexport function middleware(\n  request: NextRequest\n) {\n  const token = request.cookies\n    .get('auth-token')\n  if (!token) {\n    return NextResponse.redirect(\n      new URL('/login', request.url)\n    )\n  }\n}\n\nexport const config = {\n  matcher: ['/dashboard/:path*']\n}",
+            "next.config.ts":
+              "import type { NextConfig } from 'next'\n\nconst config: NextConfig = {\n  experimental: {\n    cacheComponents: true,\n    ppr: true,\n  },\n  poweredByHeader: false,\n}\n\nexport default config",
+            "package.json":
+              '{\n  "dependencies": {\n    "next": "^16.0.0",\n    "react": "^19.0.0",\n    "react-dom": "^19.0.0"\n  }\n}',
+          },
+          ciLog: [
+            "▶ next build",
+            "✓ Compiled successfully",
+            "✓ middleware.ts detected",
+            "✓ Type checking passed",
+            "✓ 18/18 pages generated",
+            "● Build complete — 2.8s",
+          ],
+          metrics: {
+            "Build Status": "PASSING",
+            "TS Errors": "0",
+            Middleware: "DETECTED",
+            "Auth Redirects": "0",
+            "Last Deploy": "12 min ago",
+          },
+          hint: "Next.js 16 replaced middleware.ts with a different filename and function name.",
+          bugFile: "middleware.ts",
+          bugLine: 4,
+          bugExplanation:
+            "Next.js 16 deprecated middleware.ts in favor of proxy.ts for Node.js runtime logic. For non-Edge use cases like cookie-based auth redirects, the old file is now ignored. It compiles perfectly. TypeScript says nothing. The build even says 'middleware detected', but it does not run. Auth is bypassed in production.",
+          turingQuote:
+            "The original Turing Test asked: can a machine think? Your test asks something harder: can a human see what the machine refuses to flag?",
+          collapse: [
+            "[WARN]  Auth middleware not intercepting requests",
+            "[ERROR] Unauthenticated users accessing /dashboard",
+            "[ERROR] Session validation completely bypassed",
+            "[SLACK] #security: 'auth is broken in production'",
+            "[SLACK] #on-call: 'anyone can access admin routes'",
+            "[ERROR] CRITICAL — Security breach in progress",
+            "[PAGE]  1:33 AM — Entire team paged",
+            "[SLACK] #incidents: 'P0 — auth bypass in production'",
+          ],
+        },
+      ];
+
+      const INTRO_LINES = [
+        "$ next build",
+        "",
+        "  ▲ Next.js 16.2.3",
+        "",
+        "   Creating an optimized production build...",
+        " ✓ Compiled successfully",
+        " ✓ Linting and checking validity of types",
+        " ✓ Collecting page data",
+        " ✓ Generating static pages",
+        "",
+        " ✓ Build complete",
+        "",
+        "$ git push origin main",
+        "$ vercel deploy --prod",
+        "",
+        "  Deploying...",
+        "  ✓ Build completed",
+        "  ✓ Deployment ready",
+        "",
+        "  Production: https://your-app.vercel.app",
+        "",
+        "Everything looks fine.",
+        "CI is green. Build passed.",
+        "TypeScript is happy.",
+        "",
+        "But something is wrong.",
+        "Something is always wrong.",
+      ];
+
+      // Audio
+      let audioCtx = null;
+      let audioReady = false;
+      function initAudio() {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          audioReady = true;
+        }
+        if (audioCtx.state === "suspended") audioCtx.resume();
+      }
+      function playTick() {
+        if (!audioReady) return;
+        try {
+          const a = audioCtx,
+            o = a.createOscillator(),
+            g = a.createGain();
+          o.connect(g);
+          g.connect(a.destination);
+          o.frequency.value = 700 + Math.random() * 300;
+          g.gain.setValueAtTime(0.05, a.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 0.04);
+          o.start();
+          o.stop(a.currentTime + 0.05);
+        } catch (e) {}
+      }
+      function playClick() {
+        if (!audioReady) return;
+        try {
+          const a = audioCtx,
+            o = a.createOscillator(),
+            g = a.createGain();
+          o.connect(g);
+          g.connect(a.destination);
+          o.frequency.value = 460;
+          o.type = "square";
+          g.gain.setValueAtTime(0.07, a.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 0.07);
+          o.start();
+          o.stop(a.currentTime + 0.08);
+        } catch (e) {}
+      }
+      function playWrong() {
+        if (!audioReady) return;
+        try {
+          const a = audioCtx,
+            o = a.createOscillator(),
+            g = a.createGain();
+          o.connect(g);
+          g.connect(a.destination);
+          o.frequency.value = 200;
+          o.type = "square";
+          g.gain.setValueAtTime(0.07, a.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 0.15);
+          o.start();
+          o.stop(a.currentTime + 0.15);
+        } catch (e) {}
+      }
+      function playSuccess() {
+        if (!audioReady) return;
+        try {
+          const a = audioCtx;
+          [523, 659, 784, 1047].forEach((f, i) => {
+            const o = a.createOscillator(),
+              g = a.createGain();
+            o.connect(g);
+            g.connect(a.destination);
+            o.frequency.value = f;
+            o.type = "sine";
+            const t = a.currentTime + i * 0.12;
+            g.gain.setValueAtTime(0, t);
+            g.gain.linearRampToValueAtTime(0.15, t + 0.02);
+            g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+            o.start(t);
+            o.stop(t + 0.3);
+          });
+        } catch (e) {}
+      }
+      function playSlack() {
+        if (!audioReady) return;
+        try {
+          const a = audioCtx;
+          [
+            [880, 0],
+            [1047, 0.1],
+            [1319, 0.2],
+            [1047, 0.35],
+          ].forEach(([f, t]) => {
+            const o = a.createOscillator(),
+              g = a.createGain();
+            o.connect(g);
+            g.connect(a.destination);
+            o.frequency.value = f;
+            o.type = "sine";
+            const st = a.currentTime + t;
+            g.gain.setValueAtTime(0, st);
+            g.gain.linearRampToValueAtTime(0.12, st + 0.02);
+            g.gain.exponentialRampToValueAtTime(0.001, st + 0.18);
+            o.start(st);
+            o.stop(st + 0.18);
+          });
+        } catch (e) {}
+      }
+      function playAlarm() {
+        if (!audioReady) return;
+        try {
+          const a = audioCtx,
+            o = a.createOscillator(),
+            g = a.createGain(),
+            lfo = a.createOscillator(),
+            lg = a.createGain();
+          lfo.connect(lg);
+          lg.connect(o.frequency);
+          o.connect(g);
+          g.connect(a.destination);
+          o.frequency.value = 420;
+          o.type = "sawtooth";
+          lfo.frequency.value = 7;
+          lg.gain.value = 90;
+          g.gain.setValueAtTime(0.15, a.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 1.8);
+          o.start();
+          lfo.start();
+          o.stop(a.currentTime + 1.8);
+          lfo.stop(a.currentTime + 1.8);
+        } catch (e) {}
+      }
+      function playHum(p) {
+        if (!audioReady) return;
+        try {
+          const a = audioCtx,
+            o = a.createOscillator(),
+            g = a.createGain();
+          o.connect(g);
+          g.connect(a.destination);
+          o.frequency.value = 55 + (100 - p) * 2.2;
+          o.type = "sine";
+          g.gain.setValueAtTime(0.035, a.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 0.5);
+          o.start();
+          o.stop(a.currentTime + 0.5);
+        } catch (e) {}
+      }
+
+      // Toast
+      let toastTimer = null;
+      function showToast(msg, color) {
+        const t = document.getElementById("toast");
+        if (!t) return;
+        clearTimeout(toastTimer);
+        t.textContent = msg;
+        t.style.borderColor = color || "#ff6b35";
+        t.style.color = color || "#ff9500";
+        t.style.display = "block";
+        t.style.animation = "toastIn 0.2s ease";
+        toastTimer = setTimeout(() => {
+          t.style.animation = "toastOut 0.3s ease forwards";
+          setTimeout(() => {
+            t.style.display = "none";
+          }, 300);
+        }, 2200);
+      }
+
+      // State
+      let S = {
+        screen: "start",
+        termLines: [],
+        level: 0,
+        file: null,
+        tab: "files",
+        sun: 100,
+        found: false,
+        selLine: null,
+        colLines: [],
+        showCol: false,
+        gameOver: false,
+        lvlComplete: false,
+        score: 0,
+        hints: 0,
+        showHint: false,
+      };
+      let timerIv = null,
+        introIv = null;
+      let savedScrollTop = 0;
+
+      function set(patch) {
+        const p = typeof patch === "function" ? patch(S) : patch;
+        Object.assign(S, p);
+        render();
+      }
+
+      function startTimer() {
+        clearInterval(timerIv);
+        timerIv = setInterval(() => {
+          if (S.found || S.showCol) return;
+          const next = S.sun - 0.11;
+          if (next <= 0) {
+            clearInterval(timerIv);
+            set({ sun: 0 });
+            triggerCollapse();
+            return;
+          }
+          if (Math.floor(next) !== Math.floor(S.sun) && next < 55)
+            playHum(next);
+          // update sun bar directly without full re-render
+          const bar = document.getElementById("sunbar");
+          const pct = document.getElementById("sunpct");
+          const sunCircle = document.getElementById("suncircle");
+          const sunGlow = document.getElementById("sunglow");
+          if (bar && pct && sunCircle && sunGlow) {
+            S.sun = next;
+            const col =
+              next > 60 ? "#ffd93d" : next > 30 ? "#ff9500" : "#ff4444";
+            bar.style.width = next + "%";
+            bar.style.background = col;
+            pct.textContent = "☀ " + Math.round(next) + "%";
+            pct.style.color = col;
+            const pos = getSunXY(next);
+            sunCircle.setAttribute("cx", pos.x);
+            sunCircle.setAttribute("cy", pos.y);
+            sunGlow.setAttribute("cx", pos.x);
+            sunGlow.setAttribute("cy", pos.y);
+            sunCircle.setAttribute("fill", col);
+            sunGlow.setAttribute("fill", col);
+          } else {
+            set({ sun: next });
+          }
+        }, 300);
+      }
+
+      function triggerCollapse() {
+        clearInterval(timerIv);
+        playAlarm();
+        const sw = document.getElementById("shake-wrapper");
+        if (sw) {
+          sw.classList.add("shake");
+          setTimeout(() => sw.classList.remove("shake"), 600);
+        }
+        set({ showCol: true });
+        const lines = LEVELS[S.level].collapse;
+        let i = 0;
+        const iv = setInterval(() => {
+          if (i < lines.length) {
+            const line = lines[i];
+            if (line.includes("[SLACK]")) playSlack();
+            else if (line.includes("[PAGE]") || line.includes("[ERROR]")) {
+            }
+            set((s) => ({ colLines: [...s.colLines, line] }));
+            i++;
+          } else {
+            clearInterval(iv);
+            setTimeout(() => set({ gameOver: true }), 1500);
+          }
+        }, 420);
+      }
+
+      function handleLineClick(idx) {
+        initAudio();
+        const lv = LEVELS[S.level];
+        if (S.file === lv.bugFile && idx === lv.bugLine - 1) {
+          clearInterval(timerIv);
+          playSuccess();
+          const sc = Math.max(10, Math.round(S.sun) - S.hints * 10);
+          set({ found: true, selLine: idx, score: S.score + sc });
+          setTimeout(() => set({ lvlComplete: true }), 500);
+        } else {
+          playWrong();
+          set({ selLine: idx });
+          showToast(
+            "Line " + (idx + 1) + ": No anomalies detected.",
+            "#ff6b35",
+          );
+        }
+      }
+
+      function handleNextLevel() {
+        const next = S.level + 1;
+        if (next >= LEVELS.length) {
+          set({ screen: "win", lvlComplete: false });
+        } else {
+          const files = Object.keys(LEVELS[next].files);
+          set({
+            level: next,
+            lvlComplete: false,
+            colLines: [],
+            showCol: false,
+            found: false,
+            hints: 0,
+            showHint: false,
+            selLine: null,
+            file: files[0],
+            sun: 100,
+            tab: "files",
+          });
+          startTimer();
+        }
+      }
+
+      function handleRetry() {
+        const files = Object.keys(LEVELS[S.level].files);
+        set({
+          gameOver: false,
+          showCol: false,
+          colLines: [],
+          found: false,
+          sun: 100,
+          selLine: null,
+          hints: 0,
+          showHint: false,
+          file: files[0],
+        });
+        startTimer();
+      }
+
+      function startGame() {
+        initAudio();
+        const files = Object.keys(LEVELS[0].files);
+        set({
+          screen: "game",
+          level: 0,
+          file: files[0],
+          sun: 100,
+          found: false,
+          selLine: null,
+          colLines: [],
+          showCol: false,
+          gameOver: false,
+          lvlComplete: false,
+          score: 0,
+          hints: 0,
+          showHint: false,
+          tab: "files",
+        });
+        startTimer();
+      }
+
+      function useHint() {
+        if (S.showHint) return;
+        initAudio();
+        set((s) => ({
+          hints: s.hints + 1,
+          showHint: true,
+          sun: Math.max(0, s.sun - 15),
+        }));
+      }
+
+      // Sun arc — stays fully within SVG viewBox 0 0 600 44
+      function getSunXY(progress) {
+        const p = progress / 100;
+        const angle = Math.PI * (1 - p);
+        const cx = 300,
+          cy = 38,
+          rx = 235,
+          ry = 30;
+        return { x: cx + rx * Math.cos(angle), y: cy - ry * Math.sin(angle) };
+      }
+
+      function getSunColor(p) {
+        if (p > 70) return "#ffd93d";
+        if (p > 40) return "#ff9500";
+        if (p > 20) return "#ff5500";
+        return "#cc1100";
+      }
+
+      function colorLine(line) {
+        if (line.includes("'use cache'") || line.includes("'use server'"))
+          return "#ff79c6";
+        if (line.trim().startsWith("//")) return "#3d5470";
+        if (
+          line.includes("cacheTag") ||
+          line.includes("revalidateTag") ||
+          line.includes("cacheLife") ||
+          line.includes("updateTag")
+        )
+          return "#ffd93d";
+        if (
+          /\b(async|export|import|return|const|let|await|function|default)\b/.test(
+            line,
+          )
+        )
+          return "#61dafb";
+        if (line.includes("'") || line.includes('"')) return "#f1fa8c";
+        return "#ccd6f6";
+      }
+
+      function render() {
+        const s = S;
+        const root = document.getElementById("root");
+        if (!root) return;
+
+        // START / CLICK TO BEGIN
+        if (s.screen === "start") {
+          root.innerHTML = `<div style="background:#0a0f1a;min-height:100vh;display:flex;align-items:center;justify-content:center;cursor:pointer" onclick="initAudio();startIntro()">
+      <div style="text-align:center;animation:sunrise 0.6s ease">
+        <div style="color:#00ff88;font-size:10px;letter-spacing:0.3em;margin-bottom:2rem;opacity:0.5">DEPLOY DAY</div>
+        <div style="color:#ffd93d;font-size:13px;letter-spacing:0.2em;margin-bottom:1rem">THE TURING TEST FOR DEVELOPERS</div>
+        <div style="width:1px;height:40px;background:linear-gradient(to bottom,transparent,#ffd93d55,transparent);margin:0 auto 2rem"></div>
+        <div style="color:#4a6080;font-size:12px;line-height:2;margin-bottom:3rem">The build is green. CI passed. TypeScript is happy.<br>Something is wrong. Something is always wrong.</div>
+        <div style="border:1px solid #ffd93d33;padding:14px 40px;display:inline-block;color:#ffd93d;font-size:12px;letter-spacing:0.25em">CLICK ANYWHERE TO BEGIN</div>
+        <div style="margin-top:3rem;color:#2d3f55;font-size:10px;letter-spacing:0.12em">IN MEMORY OF ALAN TURING — 1912–1954</div>
+      </div>
+    </div>`;
+          return;
+        }
+
+        // INTRO TERMINAL
+        if (s.screen === "intro") {
+          root.innerHTML = `<div style="background:#0a0f1a;min-height:100vh;padding:2rem;display:flex;flex-direction:column">
+      <div style="color:#00ff88;font-size:10px;letter-spacing:0.2em;margin-bottom:1.5rem;opacity:0.45">DEPLOY LOG — JUNE 21, 2026 — 04:32 UTC</div>
+      <div id="tlines" style="flex:1;overflow:hidden">
+        ${s.termLines
+          .map(
+            (l) =>
+              `<div style="color:${
+                l.startsWith(" ✓") || l.startsWith("  ✓")
+                  ? "#00ff88"
+                  : l === "But something is wrong." ||
+                      l === "Something is always wrong."
+                    ? "#ff4444"
+                    : l === "Everything looks fine." ||
+                        l === "CI is green. Build passed." ||
+                        l === "TypeScript is happy."
+                      ? "#ffd93d"
+                      : l.startsWith("$")
+                        ? "#61dafb"
+                        : "#4a6080"
+              };font-size:13px;line-height:1.9;font-weight:${l === "But something is wrong." || l === "Something is always wrong." ? 600 : 400}">${l || "&nbsp;"}</div>`,
+          )
+          .join("")}
+      </div>
+    </div>`;
+          const tl = document.getElementById("tlines");
+          if (tl) tl.scrollTop = tl.scrollHeight;
+          return;
+        }
+
+        // TURING SCREEN
+        if (s.screen === "turing") {
+          root.innerHTML = `<div style="background:#0a0f1a;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:3rem 1.5rem;position:relative;overflow:hidden">
+      <div style="position:absolute;top:0;left:0;right:0;bottom:0;background:radial-gradient(ellipse at 50% 40%,#0d1e3a 0%,#0a0f1a 65%)"></div>
+      <div style="position:relative;max-width:520px;text-align:center;animation:sunrise 0.8s ease">
+        <div style="color:#ffd93d;font-size:10px;letter-spacing:0.4em;margin-bottom:2rem;opacity:0.55">JUNE 21, 2026 — THE SOLSTICE</div>
+        <div style="width:1px;height:50px;background:linear-gradient(to bottom,transparent,#ffd93d44,transparent);margin:0 auto 2rem"></div>
+        <p style="color:#8892b0;font-size:14px;line-height:2;margin-bottom:1rem;font-family:Georgia,serif;font-style:italic">In 1950, Alan Turing asked:</p>
+        <p style="color:#fff;font-size:22px;line-height:1.6;margin-bottom:1rem;font-family:Georgia,serif;font-weight:600">"Can a machine think?"</p>
+        <p style="color:#8892b0;font-size:13px;line-height:2;margin-bottom:0.5rem;font-family:Georgia,serif">In 2026, I ask a harder question:</p>
+        <p style="color:#61dafb;font-size:16px;line-height:1.8;margin-bottom:2rem;font-family:Georgia,serif;font-style:italic">Can a human spot the bug that looks like correct code?</p>
+        <p style="color:#4a6080;font-size:12px;line-height:2;margin-bottom:2.5rem">The build is green. TypeScript is happy. CI passed.<br>Three bugs are hiding in plain sight.<br>The longest day of the year is your only chance.<br>The sun is rising. You have until sunset.</p>
+        <button onclick="set({screen:'howto'})" style="background:transparent;border:1px solid #ffd93d;color:#ffd93d;padding:13px 36px;font-size:12px;letter-spacing:0.2em;cursor:pointer;font-family:'Courier New',monospace">BEGIN THE TEST →</button>
+        <div style="margin-top:2.5rem;color:#2d3f55;font-size:10px;letter-spacing:0.14em">IN MEMORY OF ALAN TURING — 1912–1954</div>
+      </div>
+    </div>`;
+          return;
+        }
+
+        // HOW TO PLAY
+        if (s.screen === "howto") {
+          root.innerHTML = `<div style="background:#0a0f1a;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem 1.5rem">
+      <div style="max-width:500px;width:100%;animation:sunrise 0.5s ease">
+        <div style="color:#61dafb;font-size:10px;letter-spacing:0.3em;margin-bottom:2rem">HOW TO PLAY</div>
+        <div style="border:1px solid #1e3a5f;padding:1.5rem 2rem;margin-bottom:2rem">
+          ${[
+            [
+              "☀",
+              "The sun is your timer",
+              "You have until sunset to find the bug. Watch the arc and bar at the top of each level.",
+            ],
+            [
+              "📁",
+              "Investigate the files",
+              "Browse the file tree on the left. Check CI logs and production metrics too.",
+            ],
+            [
+              "→",
+              "Click the buggy line",
+              "When you find the suspicious line of code, click it. Wrong clicks give you feedback.",
+            ],
+            [
+              "⚠",
+              "Miss it and pay the price",
+              "Sun sets. Production collapses. The Slack notifications begin. The 3am page goes out.",
+            ],
+          ]
+            .map(
+              ([
+                icon,
+                title,
+                desc,
+              ]) => `<div style="display:flex;gap:16px;margin-bottom:1.4rem;align-items:flex-start">
+            <div style="font-size:17px;flex-shrink:0;width:24px">${icon}</div>
+            <div>
+              <div style="color:#ccd6f6;font-size:13px;margin-bottom:3px">${title}</div>
+              <div style="color:#4a6080;font-size:11px;line-height:1.7">${desc}</div>
+            </div>
+          </div>`,
+            )
+            .join("")}
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+          <span style="color:#2d4a6e;font-size:10px;line-height:1.6">3 levels · Real Next.js 16 bugs<br>Based on true production incidents</span>
+          <button onclick="startGame()" style="background:transparent;border:1px solid #00ff88;color:#00ff88;padding:11px 28px;font-size:11px;letter-spacing:0.2em;cursor:pointer;font-family:'Courier New',monospace">START →</button>
+        </div>
+      </div>
+    </div>`;
+          return;
+        }
+
+        // WIN
+        if (s.screen === "win") {
+          root.innerHTML = `<div style="background:#0a0f1a;min-height:100vh;font-family:Georgia,serif;display:flex;align-items:center;justify-content:center;padding:2rem 1.5rem">
+      <div style="max-width:500px;text-align:center;animation:sunrise 0.6s ease">
+        <div style="color:#ffd93d;font-size:42px;margin-bottom:1rem">☀</div>
+        <div style="color:#ffd93d;font-size:10px;letter-spacing:0.4em;margin-bottom:1.5rem;font-family:'Courier New',monospace">SOLSTICE TEST — COMPLETE</div>
+        <p style="color:#fff;font-size:19px;line-height:1.8;margin-bottom:1.5rem;font-weight:600">You prevented 3 production incidents.<br>47 developers sleep tonight because of you.</p>
+        <p style="color:#8892b0;font-size:13px;line-height:2;margin-bottom:2rem;font-style:italic">"The original Turing Test distinguished human from machine.<br>Your test distinguishes 'builds' from 'works.'<br>That distinction is harder than it looks."</p>
+        <div style="background:#0d1f3c;border:1px solid #1e3a5f;padding:1.5rem;margin-bottom:2rem;font-family:'Courier New',monospace">
+          <div style="color:#3d4f6e;font-size:10px;margin-bottom:6px">FINAL SCORE</div>
+          <div style="color:#00ff88;font-size:36px;font-weight:600">${s.score}</div>
+          <div style="color:#3d4f6e;font-size:10px;margin-top:4px">ACROSS 3 LEVELS — PRODUCTION SAVED</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:#1e3a5f;margin-bottom:2rem">
+          ${LEVELS.map(
+            (
+              l,
+              i,
+            ) => `<div style="background:#0a0f1a;padding:1rem;text-align:center">
+            <div style="color:#00ff88;font-size:16px;margin-bottom:4px">✓</div>
+            <div style="color:#ccd6f6;font-size:10px;font-family:'Courier New',monospace">LEVEL ${i + 1}</div>
+            <div style="color:#3d4f6e;font-size:9px;margin-top:2px;font-family:'Courier New',monospace">${l.difficulty}</div>
+          </div>`,
+          ).join("")}
+        </div>
+        <button onclick="location.reload()" style="background:transparent;border:1px solid #ffd93d;color:#ffd93d;padding:11px 28px;font-size:11px;letter-spacing:0.2em;cursor:pointer;font-family:'Courier New',monospace">PLAY AGAIN</button>
+      </div>
+    </div>`;
+          return;
+        }
+
+        // GAME
+        if (s.screen === "game") {
+          const lv = LEVELS[s.level];
+          const files = Object.keys(lv.files);
+          const codeLines = s.file ? lv.files[s.file].split("\n") : [];
+          const sun = s.sun;
+          const sp = getSunXY(sun);
+          const sc = getSunColor(sun);
+
+          root.innerHTML = `<div style="background:#0a0f1a;min-height:100vh;font-family:'Courier New',monospace;display:flex;flex-direction:column;position:relative;overflow:hidden">
+
+      ${
+        s.showCol
+          ? `<div style="position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(8,0,3,0.97);z-index:100;display:flex;flex-direction:column;padding:2rem;min-height:100vh">
+        <div style="color:#ff4444;font-size:10px;letter-spacing:0.3em;margin-bottom:1rem;animation:pulse 0.8s infinite">⚠ PRODUCTION COLLAPSE — LEVEL ${s.level + 1}</div>
+        <div id="clines" style="flex:1;overflow:auto;max-height:420px">
+          ${s.colLines.map((l) => `<div class="fadein" style="color:${l.includes("[PAGE]") ? "#ff4444" : l.includes("[ERROR]") ? "#ff6b35" : l.includes("[SLACK]") ? "#61dafb" : "#ff9500"};font-size:12px;line-height:2.1">${l}</div>`).join("")}
+        </div>
+        ${
+          s.gameOver
+            ? `<div style="margin-top:2rem;text-align:center">
+          <p style="color:#8892b0;font-size:13px;margin-bottom:1.5rem;font-family:Georgia,serif;font-style:italic;line-height:1.9">"A machine cannot find what it was never taught to see.<br>The human must look where the machine won't."</p>
+          <button onclick="handleRetry()" style="background:transparent;border:1px solid #ff4444;color:#ff4444;padding:10px 24px;font-size:10px;letter-spacing:0.2em;cursor:pointer;font-family:'Courier New',monospace">RETRY LEVEL</button>
+        </div>`
+            : ""
+        }
+      </div>`
+          : ""
+      }
+
+      ${
+        s.lvlComplete
+          ? `<div style="position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,22,8,0.97);z-index:100;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:2rem;text-align:center;min-height:100vh">
+        <div style="color:#00ff88;font-size:30px;margin-bottom:1rem">✓</div>
+        <div style="color:#00ff88;font-size:11px;letter-spacing:0.3em;margin-bottom:1.5rem">BUG FOUND — PRODUCTION SAVED</div>
+        <div style="background:#0d2a1a;border:1px solid #00ff8828;padding:1.5rem;margin-bottom:1.5rem;max-width:480px;text-align:left">
+          <div style="color:#2d5e3a;font-size:9px;margin-bottom:8px;letter-spacing:0.1em">THE BUG</div>
+          <p style="color:#ccd6f6;font-size:12px;line-height:1.9;margin:0">${lv.bugExplanation}</p>
+        </div>
+        <p style="color:#ffd93d;font-size:13px;font-style:italic;font-family:Georgia,serif;margin-bottom:2rem;max-width:440px;line-height:1.9">"${lv.turingQuote}"</p>
+        <button onclick="handleNextLevel()" style="background:transparent;border:1px solid #00ff88;color:#00ff88;padding:11px 28px;font-size:11px;letter-spacing:0.2em;cursor:pointer;font-family:'Courier New',monospace">${s.level < LEVELS.length - 1 ? "NEXT LEVEL →" : "FINAL VERDICT →"}</button>
+      </div>`
+          : ""
+      }
+
+      <div style="padding:10px 16px;border-bottom:1px solid #1e3a5f;display:flex;align-items:center;justify-content:space-between;background:#060d1a;flex-shrink:0">
+        <div>
+          <span style="color:#2d4a6e;font-size:9px;letter-spacing:0.2em">LEVEL ${lv.id}/3 — </span>
+          <span style="color:#ccd6f6;font-size:11px">${lv.title}</span>
+          <span style="background:#1e3a5f;color:#61dafb;font-size:8px;padding:2px 6px;margin-left:8px;letter-spacing:0.1em">${lv.difficulty}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:16px">
+          <span id="sunpct" style="color:${sun > 60 ? "#ffd93d" : sun > 30 ? "#ff9500" : "#ff4444"};font-size:10px">☀ ${Math.round(sun)}%</span>
+          <span style="color:#00ff88;font-size:10px">SCORE: ${s.score}</span>
+        </div>
+      </div>
+
+      <svg width="100%" height="44" viewBox="0 0 600 44" style="background:#060d1a;flex-shrink:0;display:block">
+        <path d="M 65 40 Q 300 2 535 40" fill="none" stroke="#1a3050" stroke-width="1" stroke-dasharray="4,5"/>
+        <circle id="sunglow" cx="${sp.x}" cy="${sp.y}" r="16" fill="${sc}" opacity="0.12"/>
+        <circle id="suncircle" cx="${sp.x}" cy="${sp.y}" r="9" fill="${sc}" opacity="${0.45 + sun / 220}"/>
+        <line x1="65" y1="41" x2="535" y2="41" stroke="#1a3050" stroke-width="0.5"/>
+      </svg>
+
+      <div style="height:3px;background:#060d1a;flex-shrink:0">
+        <div id="sunbar" style="height:100%;width:${sun}%;background:${sun > 60 ? "#ffd93d" : sun > 30 ? "#ff9500" : "#ff4444"};transition:background 0.5s ease"></div>
+      </div>
+
+      <div style="padding:8px 16px;background:#080d1a;border-bottom:1px solid #1e3a5f;display:flex;gap:8px;flex-shrink:0">
+        <span style="color:#ff6b35;font-size:9px;letter-spacing:0.15em;flex-shrink:0;padding-top:2px">⚠</span>
+        <span style="color:#8892b0;font-size:clamp(10px,1.6vw,11px);line-height:1.6">${lv.bugDescription}</span>
+      </div>
+
+      <div style="display:flex;flex:1;overflow:hidden;min-height:0">
+
+        <div style="width:clamp(140px,22vw,185px);border-right:1px solid #1e3a5f;background:#060d1a;flex-shrink:0;display:flex;flex-direction:column;min-height:0">
+          <div style="display:flex;border-bottom:1px solid #1e3a5f;flex-shrink:0">
+            ${["files", "ci", "metrics"].map((t) => `<button onclick="set({tab:'${t}'})" style="flex:1;padding:8px 1px;background:${s.tab === t ? "#0d1f3c" : "transparent"};border:none;border-bottom:${s.tab === t ? "2px solid #61dafb" : "2px solid transparent"};color:${s.tab === t ? "#61dafb" : "#243650"};font-size:9px;letter-spacing:0.1em;cursor:pointer;text-transform:uppercase;font-family:'Courier New',monospace">${t}</button>`).join("")}
+          </div>
+          <div style="flex:1;overflow:auto;min-height:0">
+            ${s.tab === "files" ? `<div style="padding:5px 0">${files.map((f) => `<button onclick="(function(){set({file:'${f}',selLine:null});playClick();})()" style="width:100%;text-align:left;padding:8px 10px;background:${s.file === f ? "#0c1e3a" : "transparent"};border:none;border-left:${s.file === f ? "2px solid #61dafb" : "2px solid transparent"};color:${s.file === f ? "#ccd6f6" : "#2e4460"};font-size:clamp(9px,1.5vw,10px);cursor:pointer;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:'Courier New',monospace">${f}</button>`).join("")}</div>` : ""}
+            ${s.tab === "ci" ? `<div style="padding:12px">${lv.ciLog.map((l) => `<div style="color:${l.startsWith("✓") ? "#00ff88" : l.startsWith("▶") ? "#61dafb" : l.startsWith("●") ? "#ffd93d" : "#8892b0"};font-size:10px;line-height:2.1">${l}</div>`).join("")}</div>` : ""}
+            ${
+              s.tab === "metrics"
+                ? `<div style="padding:12px">${Object.entries(lv.metrics)
+                    .map(
+                      ([k, v]) =>
+                        `<div style="margin-bottom:12px"><div style="color:#243650;font-size:9px;letter-spacing:0.1em;margin-bottom:2px">${k.toUpperCase()}</div><div style="color:${v === "PASSING" || v.includes("%") ? "#00ff88" : "#ccd6f6"};font-size:12px">${v}</div></div>`,
+                    )
+                    .join("")}</div>`
+                : ""
+            }
+          </div>
+        </div>
+
+        <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;min-height:0">
+          ${
+            s.file
+              ? `
+          <div style="padding:7px 14px;border-bottom:1px solid #1e3a5f;background:#060d1a;display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
+            <span style="color:#61dafb;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.file}</span>
+            <span style="color:#243650;font-size:9px;letter-spacing:0.1em;flex-shrink:0;margin-left:8px">CLICK A LINE</span>
+          </div>
+          <div id="codescroll" style="flex:1;overflow:auto;padding:6px 0;min-height:0">
+            ${codeLines
+              .map((line, i) => {
+                const isBug = s.file === lv.bugFile && i === lv.bugLine - 1;
+                const isSel = s.selLine === i;
+                return `<div onclick="handleLineClick(${i})" style="display:flex;cursor:pointer;background:${isSel ? (S.found && isBug ? "#001a0a" : "#180c00") : "transparent"};border-left:${isSel ? (S.found && isBug ? "2px solid #00ff88" : "2px solid #ff6b35") : "2px solid transparent"};min-height:26px;transition:background 0.1s"
+                onmouseover="if(${s.selLine}!==${i})this.style.background='#0d1f3c33'"
+                onmouseout="if(${s.selLine}!==${i})this.style.background='transparent'">
+                <span style="color:#1a3050;font-size:10px;line-height:1.9;width:30px;text-align:right;padding-right:10px;flex-shrink:0;user-select:none;padding-top:2px">${i + 1}</span>
+                <span style="color:${colorLine(line)};font-size:clamp(10px,1.8vw,12px);line-height:1.9;white-space:pre;font-family:'Courier New',monospace">${line || " "}</span>
+              </div>`;
+              })
+              .join("")}
+          </div>`
+              : ""
+          }
+        </div>
+      </div>
+
+      <div style="padding:9px 16px;border-top:1px solid #1e3a5f;background:#060d1a;display:flex;align-items:center;gap:12px;flex-shrink:0">
+        <button onclick="useHint()" ${s.showHint ? "disabled" : ""} style="background:transparent;border:1px solid #ff9500;color:${s.showHint ? "#243650" : "#ff9500"};padding:5px 12px;font-size:9px;letter-spacing:0.15em;cursor:${s.showHint ? "not-allowed" : "pointer"};font-family:'Courier New',monospace;flex-shrink:0">
+          HINT ${s.showHint ? "(USED)" : "(-15%)"}
+        </button>
+        ${s.showHint ? `<div style="color:#ff9500;font-size:11px;flex:1;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">→ ${lv.hint}</div>` : '<div style="flex:1"></div>'}
+      </div>
+    </div>`;
+
+          const cl = document.getElementById("clines");
+          if (cl) cl.scrollTop = cl.scrollHeight;
+
+          const cs = document.getElementById("codescroll");
+          if (cs) cs.scrollTop = savedScrollTop;
+        }
+      }
+
+      function startIntro() {
+        set({ screen: "intro", termLines: [] });
+        let i = 0;
+        clearInterval(introIv);
+        introIv = setInterval(() => {
+          if (i < INTRO_LINES.length) {
+            playTick();
+            set((s) => ({ termLines: [...s.termLines, INTRO_LINES[i]] }));
+            i++;
+          } else {
+            clearInterval(introIv);
+            setTimeout(() => set({ screen: "turing" }), 1200);
+          }
+        }, 90);
+      }
+
+      render();
+    </script>
+  </body>
+</html>
