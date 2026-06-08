@@ -68,7 +68,7 @@ This game is part of my Next.js 16 caching series on DEV:
 1. [I built a free debugger because Next.js 16 'use cache' was completely invisible during development](https://dev.to/shubhradev/i-built-a-free-debugger-because-nextjs-16-use-cache-was-completely-invisible-during-development-4a8)
 2. [7 Next.js 16 Caching Bugs That Compile Fine and Break Silently in Production](https://dev.to/shubhradev/7-nextjs-16-caching-bugs-that-compile-fine-and-break-silently-in-production-1cap)
 3. [Next.js 16 Broke My App in 4 Places and None of Them Threw an Error](https://dev.to/shubhradev/nextjs-16-broke-my-app-in-4-places-and-none-of-them-threw-an-error-51mn)
-4. [After 7 Next.js 16 Caching Bugs, I Stopped Guessing and Built a System](after-7-nextjs-16-caching-bugs-i-stopped-guessing-and-built-a-system-4ijp)
+4. [After 7 Next.js 16 Caching Bugs, I Stopped Guessing and Built a System](https://dev.to/shubhradev/after-7-nextjs-16-caching-bugs-i-stopped-guessing-and-built-a-system-4ijp)
 
 ## License
 
